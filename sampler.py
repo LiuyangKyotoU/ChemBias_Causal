@@ -139,13 +139,12 @@ def diff_dis_zinc(zinc, biased, unbiased):
     ax3.set_xlim([-10, 5])
 
 
-if __name__ == '__main__':
-    # qm9 = QM9('data/QM9')
-    # qm9_bias()
-    # dic = torch.load('sampling/qm9/0.pt')
-    # diff_dis_qm9(qm9, dic['train_index']['100'], dic['test_index'])
+qm9 = QM9('data/QM9')
+qm9_bias()
+dic = torch.load('sampling/qm9/0.pt')
+diff_dis_qm9(qm9, dic['train_index']['100'], dic['test_index'])
 
-    zinc = ZINC('data/ZINC')
-    zinc_bias()
-    dic = torch.load('sampling/zinc/0.pt')
-    diff_dis_zinc(zinc, dic['train_index']['100'], dic['test_index'])
+zinc = ZINC('data/ZINC')
+zinc_bias()
+dic = torch.load('sampling/zinc/0.pt')
+diff_dis_zinc(zinc, dic['train_index']['100'], dic['test_index'])
