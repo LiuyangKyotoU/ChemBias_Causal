@@ -112,7 +112,7 @@ def regress2(path: 'task-scenario-trial',
 
     for alpha in [0, 100]:
         for beta in [0, 0.1]:
-            if alpha == beta:
+            if alpha == beta == 0:
                 continue
             print('Params: alpha:{} beta:{}'.format(alpha, beta))
             R = Net(in_dim, h_dim, edge_dim, 'R').to(device)
