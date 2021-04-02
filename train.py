@@ -4,7 +4,8 @@ import argparse
 import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool
 from torch_geometric.data import DataLoader
-from torch_geometric.datasets import QM9
+from torch_geometric.datasets import QM9, ZINC
+from torch_geometric.datasets import MoleculeNet
 from geomloss import SamplesLoss
 from model import Net, twostep_net
 import math
@@ -18,7 +19,8 @@ args = parser.parse_args()
 def regress1(path: 'task-scenario-trial',
              test_dataset, train_dataset, val_dataset, batch_size,
              in_dim, h_dim, edge_dim,
-             std: float, eval='mae'):
+             std: float, eval='mae',
+             epoch_num1=30, epoch_num2=200):
     print('{} Train Using BaseLine and Two-step Starts'.format(path))
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -28,7 +30,7 @@ def regress1(path: 'task-scenario-trial',
     classifier = twostep_net(in_dim, h_dim, edge_dim, task='classify').to(device)
     optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
-    for epoch in range(30):
+    for epoch in range(epoch_num1):
         classifier.train()
         train_iter = iter(train_loader)
         test_iter = iter(test_loader)
@@ -52,7 +54,7 @@ def regress1(path: 'task-scenario-trial',
         best_val_error = float('inf')
         best_model_dict = copy.deepcopy(regresser.state_dict())
         # classifier.eval()
-        for epoch in range(200):
+        for epoch in range(epoch_num2):
             regresser.train()
             for data in train_loader:
                 data = data.to(device)
@@ -100,7 +102,8 @@ def regress1(path: 'task-scenario-trial',
 def regress2(path: 'task-scenario-trial',
              test_dataset, train_dataset, val_dataset, batch_size,
              in_dim, h_dim, edge_dim,
-             std: float, eval='mae'):
+             std: float, eval='mae',
+             epoch_num=200):
     print('{} Train Using Causal Starts'.format(path))
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -122,7 +125,7 @@ def regress2(path: 'task-scenario-trial',
             best_model_dict = {'R': copy.deepcopy(R.state_dict()),
                                'P': copy.deepcopy(P.state_dict()),
                                'S': copy.deepcopy(S.state_dict())}
-            for epoch in range(200):
+            for epoch in range(epoch_num):
                 # print(epoch, scheduler.optimizer.param_groups[0]['lr'])
                 R.train()
                 P.train()
@@ -190,9 +193,11 @@ def regress2(path: 'task-scenario-trial',
                 f.write(str(test_error) + '\t')
     print('{} Train Using Causal Ends'.format(path))
 
+
 task = args.task
 trial = args.trial
 
+# QM9
 if task[:3] == 'qm9':
     target = int(task[4:])
 
@@ -202,8 +207,7 @@ if task[:3] == 'qm9':
             data.y = data.y[:, target]
             return data
 
-if task[:3] == 'qm9':
-    target = int(task[4:])
+
     scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
     dataset = QM9('data/QM9', transform=MyTransform())
     mean = dataset.data.y.mean(dim=0, keepdim=True)
@@ -219,9 +223,143 @@ if task[:3] == 'qm9':
         regress1(path,
                  test_dataset, train_dataset, val_dataset, 256,
                  11, 32, 4,
-                 std, 'mae')
+                 std, 'mae',
+                 30, 200)
         regress2(path,
                  test_dataset, train_dataset, val_dataset, 256,
                  11, 32, 4,
-                 std, 'mae'
-                 )
+                 std, 'mae',
+                 200)
+
+# ZINC
+if task == 'zinc':
+    class MyTransform(object):
+        def __call__(self, data):
+            data.x = F.one_hot(data.x.view(-1), num_classes=28).to(torch.float32)
+            data.edge_attr = F.one_hot(data.edge_attr, num_classes=4).to(torch.float32)
+            return data
+
+
+    scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
+    dataset = ZINC('data/ZINC', transform=MyTransform())
+    mean = dataset.data.y.mean()
+    std = dataset.data.y.std()
+    dataset.data.y = (dataset.data.y - mean) / std
+    mean, std = mean.item(), std.item()
+    for s in scenarios:
+        path = '{}-{}-{}'.format(task, s, trial)
+        dic = torch.load('sampling/zinc/' + str(trial) + '.pt')
+        test_dataset = dataset[dic['test_index']]
+        train_dataset = dataset[dic['train_index'][s]]
+        val_dataset = dataset[dic['val_index'][s]]
+        regress1(path,
+                 test_dataset, train_dataset, val_dataset, 256,
+                 28, 32, 4,
+                 std, 'mae',
+                 30, 200)
+        regress2(path,
+                 test_dataset, train_dataset, val_dataset, 256,
+                 28, 32, 4,
+                 std, 'mae',
+                 200)
+
+# ESOL
+if task == 'esol':
+    class MyTransform(object):
+        def __call__(self, data):
+            data.x = data.x.to(torch.float32)
+            data.edge_attr = data.edge_attr.to(torch.float32)
+            data.y = data.y[:, 0]
+            return data
+
+
+    scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
+    dataset = MoleculeNet('data/MolNet', 'ESOL', transform=MyTransform())
+    mean = dataset.data.y.mean()
+    std = dataset.data.y.std()
+    dataset.data.y = (dataset.data.y - mean) / std
+    mean, std = mean.item(), std.item()
+    for s in scenarios:
+        path = '{}-{}-{}'.format(task, s, trial)
+        dic = torch.load('sampling/esol/' + str(trial) + '.pt')
+        test_dataset = dataset[dic['test_index']]
+        train_dataset = dataset[dic['train_index'][s]]
+        val_dataset = dataset[dic['val_index'][s]]
+        regress1(path,
+                 test_dataset, train_dataset, val_dataset, 8,
+                 9, 32, 3,
+                 std, 'rmse',
+                 30, 200)
+        regress2(path,
+                 test_dataset, train_dataset, val_dataset, 8,
+                 9, 32, 3,
+                 std, 'rmse',
+                 200)
+
+
+# LIPO
+if task == 'lipo':
+    class MyTransform(object):
+        def __call__(self, data):
+            data.x = data.x.to(torch.float32)
+            data.edge_attr = data.edge_attr.to(torch.float32)
+            data.y = data.y[:, 0]
+            return data
+
+
+    scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
+    dataset = MoleculeNet('data/MolNet', 'LIPO', transform=MyTransform())
+    mean = dataset.data.y.mean()
+    std = dataset.data.y.std()
+    dataset.data.y = (dataset.data.y - mean) / std
+    mean, std = mean.item(), std.item()
+    for s in scenarios:
+        path = '{}-{}-{}'.format(task, s, trial)
+        dic = torch.load('sampling/lipo/' + str(trial) + '.pt')
+        test_dataset = dataset[dic['test_index']]
+        train_dataset = dataset[dic['train_index'][s]]
+        val_dataset = dataset[dic['val_index'][s]]
+        regress1(path,
+                 test_dataset, train_dataset, val_dataset, 16,
+                 9, 32, 3,
+                 std, 'rmse',
+                 30, 200)
+        regress2(path,
+                 test_dataset, train_dataset, val_dataset, 16,
+                 9, 32, 3,
+                 std, 'rmse',
+                 200)
+
+
+# FREESOLV
+if task == 'freesolv':
+    class MyTransform(object):
+        def __call__(self, data):
+            data.x = data.x.to(torch.float32)
+            data.edge_attr = data.edge_attr.to(torch.float32)
+            data.y = data.y[:, 0]
+            return data
+
+
+    scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
+    dataset = MoleculeNet('data/MolNet', 'FREESOLV', transform=MyTransform())
+    mean = dataset.data.y.mean()
+    std = dataset.data.y.std()
+    dataset.data.y = (dataset.data.y - mean) / std
+    mean, std = mean.item(), std.item()
+    for s in scenarios:
+        path = '{}-{}-{}'.format(task, s, trial)
+        dic = torch.load('sampling/freesolv/' + str(trial) + '.pt')
+        test_dataset = dataset[dic['test_index']]
+        train_dataset = dataset[dic['train_index'][s]]
+        val_dataset = dataset[dic['val_index'][s]]
+        regress1(path,
+                 test_dataset, train_dataset, val_dataset, 2,
+                 9, 32, 3,
+                 std, 'rmse',
+                 30, 200)
+        regress2(path,
+                 test_dataset, train_dataset, val_dataset, 2,
+                 9, 32, 3,
+                 std, 'rmse',
+                 200)
