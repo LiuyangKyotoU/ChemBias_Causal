@@ -1,8 +1,7 @@
 import torch
 from torch_geometric.datasets import QM9, ZINC
+from torch_geometric.datasets import MoleculeNet
 import numpy as np
-
-scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
 
 
 def sigmoid(x, a, b):
@@ -23,8 +22,102 @@ def bias_sampler(arrs, params, s, index, size):
     return torch.tensor(np.random.choice(index, size, replace=False, p=tmp.numpy()))
 
 
+def freesolv_bias():
+    freesolv = MoleculeNet('data/MolNet', 'FREESOLV')
+    scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
+    n = len(freesolv)
+    # molecular size, molecular size, molecular gap value
+    ind1, ind2, ind3 = [], [], []
+    for data in freesolv:
+        ind1.append(data.x.shape[0])
+        ind2.append((torch.nonzero(data.edge_attr[:, 0] == 1).shape[0] + 1) / (data.edge_attr.shape[0] + 1))
+        ind3.append(data.y[0, 0].item())
+    ind1 = torch.tensor(ind1).to(torch.float32)
+    ind2 = torch.tensor(ind2).to(torch.float32)
+    ind3 = torch.tensor(ind3).to(torch.float32)
+
+    for trial in range(10):
+        index = torch.randperm(n)
+        test_index = index[:n // 10]
+        other_index = index[n // 10:]
+        dic = {'test_index': test_index, 'train_index': {}, 'val_index': {}}
+        for s in scenarios:
+            biased = bias_sampler([ind1[other_index], ind2[other_index], ind3[other_index]],
+                                  [[-2, 8], [-50, 0.7], [2, -3]],
+                                  s, other_index, n // 7)
+            biased = biased[torch.randperm(biased.shape[0])]
+            train_index = biased[:n // 10]
+            val_index = biased[n // 10:]
+            dic['train_index'][s] = train_index
+            dic['val_index'][s] = val_index
+        torch.save(dic, 'sampling/freesolv/' + str(trial) + '.pt')
+
+
+def lipo_bias():
+    lipo = MoleculeNet('data/MolNet', 'LIPO')
+    scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
+    n = len(lipo)
+    # molecular size, molecular size, molecular gap value
+    ind1, ind2, ind3 = [], [], []
+    for data in lipo:
+        ind1.append(data.x.shape[0])
+        ind2.append((torch.nonzero(data.edge_attr[:, 0] == 1).shape[0] + 1) / (data.edge_attr.shape[0] + 1))
+        ind3.append(data.y[0, 0].item())
+    ind1 = torch.tensor(ind1).to(torch.float32)
+    ind2 = torch.tensor(ind2).to(torch.float32)
+    ind3 = torch.tensor(ind3).to(torch.float32)
+
+    for trial in range(10):
+        index = torch.randperm(n)
+        test_index = index[:n // 10]
+        other_index = index[n // 10:]
+        dic = {'test_index': test_index, 'train_index': {}, 'val_index': {}}
+        for s in scenarios:
+            biased = bias_sampler([ind1[other_index], ind2[other_index], ind3[other_index]],
+                                  [[-2, 25], [-50, 0.4], [2, 4]],
+                                  s, other_index, n // 7)
+            biased = biased[torch.randperm(biased.shape[0])]
+            train_index = biased[:n // 10]
+            val_index = biased[n // 10:]
+            dic['train_index'][s] = train_index
+            dic['val_index'][s] = val_index
+        torch.save(dic, 'sampling/lipo/' + str(trial) + '.pt')
+
+
+def esol_bias():
+    esol = MoleculeNet('data/MolNet', 'ESOL')
+    scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
+    n = len(esol)
+    # molecular size, molecular size, molecular gap value
+    ind1, ind2, ind3 = [], [], []
+    for data in esol:
+        ind1.append(data.x.shape[0])
+        ind2.append((torch.nonzero(data.edge_attr[:, 0] == 1).shape[0] + 1) / (data.edge_attr.shape[0] + 1))
+        ind3.append(data.y[0, 0].item())
+    ind1 = torch.tensor(ind1).to(torch.float32)
+    ind2 = torch.tensor(ind2).to(torch.float32)
+    ind3 = torch.tensor(ind3).to(torch.float32)
+
+    for trial in range(10):
+        index = torch.randperm(n)
+        test_index = index[:n // 10]
+        other_index = index[n // 10:]
+        dic = {'test_index': test_index, 'train_index': {}, 'val_index': {}}
+        for s in scenarios:
+            biased = bias_sampler([ind1[other_index], ind2[other_index], ind3[other_index]],
+                                  [[-2, 10], [-50, 0.5], [2, -2]],
+                                  s, other_index, n // 7)
+            biased = biased[torch.randperm(biased.shape[0])]
+            train_index = biased[:n // 10]
+            val_index = biased[n // 10:]
+            dic['train_index'][s] = train_index
+            dic['val_index'][s] = val_index
+        torch.save(dic, 'sampling/esol/' + str(trial) + '.pt')
+
+
 def zinc_bias():
     zinc = ZINC('data/ZINC')
+    scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
     n = len(zinc)
     # molecular size, molecular size, molecular gap value
     ind1, ind2, ind3 = [], [], []
@@ -54,6 +147,7 @@ def zinc_bias():
 
 def qm9_bias():
     qm9 = QM9('data/QM9')
+    scenarios = ['000', '100', '010', '001', '110', '101', '011', '111']
     n = len(qm9)
     # molecular size, molecular size, molecular gap value
     ind1, ind2, ind3 = [], [], []
@@ -139,12 +233,50 @@ def diff_dis_zinc(zinc, biased, unbiased):
     ax3.set_xlim([-10, 5])
 
 
-qm9 = QM9('data/QM9')
-qm9_bias()
-dic = torch.load('sampling/qm9/0.pt')
-diff_dis_qm9(qm9, dic['train_index']['100'], dic['test_index'])
+def diff_dis_esol_lipo_freesolv(dset, biased, unbiased):
+    import matplotlib.pyplot as plt
+    s1, s2 = [], []
+    p1, p2 = [], []
+    y1, y2 = [], []
+    for d in dset[biased]:
+        s1.append(d.x.shape[0])
+        p1.append((torch.nonzero(d.edge_attr[:, 0] == 1).shape[0] + 1) / (d.edge_attr.shape[0] + 1))
+        y1.append(d.y[0, 0].item())
+    for d in dset[unbiased]:
+        s2.append(d.x.shape[0])
+        p2.append((torch.nonzero(d.edge_attr[:, 0] == 1).shape[0] + 1) / (d.edge_attr.shape[0] + 1))
+        y2.append(d.y[0, 0].item())
 
-zinc = ZINC('data/ZINC')
-zinc_bias()
-dic = torch.load('sampling/zinc/0.pt')
-diff_dis_zinc(zinc, dic['train_index']['100'], dic['test_index'])
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
+    ax1.hist(s1, bins=10, alpha=0.5)
+    ax1.hist(s2, bins=10, alpha=0.5)
+    ax2.hist(p1, bins=10, alpha=0.5)
+    ax2.hist(p2, bins=10, alpha=0.5)
+    ax3.hist(y1, bins=10, alpha=0.5)
+    ax3.hist(y2, bins=10, alpha=0.5)
+
+
+# qm9 = QM9('data/QM9')
+# qm9_bias()
+# dic = torch.load('sampling/qm9/0.pt')
+# diff_dis_qm9(qm9, dic['train_index']['100'], dic['test_index'])
+
+# zinc = ZINC('data/ZINC')
+# zinc_bias()
+# dic = torch.load('sampling/zinc/0.pt')
+# diff_dis_zinc(zinc, dic['train_index']['100'], dic['test_index'])
+
+# esol = MoleculeNet('data/MolNet', 'ESOL')
+# esol_bias()
+# dic = torch.load('sampling/esol/0.pt')
+# diff_dis_esol_lipo_freesolv(esol, dic['train_index']['100'], dic['test_index'])
+
+# lipo = MoleculeNet('data/MolNet', 'LIPO')
+# lipo_bias()
+# dic = torch.load('sampling/lipo/0.pt')
+# diff_dis_esol_lipo_freesolv(lipo, dic['train_index']['100'], dic['test_index'])
+
+# freesolv = MoleculeNet('data/MolNet', 'FREESOLV')
+# freesolv_bias()
+# dic = torch.load('sampling/freesolv/0.pt')
+# diff_dis_esol_lipo_freesolv(freesolv, dic['train_index']['100'], dic['test_index'])
