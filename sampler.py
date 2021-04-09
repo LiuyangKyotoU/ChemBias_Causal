@@ -43,7 +43,7 @@ def freesolv_bias():
         dic = {'test_index': test_index, 'train_index': {}, 'val_index': {}}
         for s in scenarios:
             biased = bias_sampler([ind1[other_index], ind2[other_index], ind3[other_index]],
-                                  [[-2, 8], [-50, 0.7], [2, -3]],
+                                  [[-0.5, 9], [-50, 0.65], [1, -3.82]],
                                   s, other_index, n // 7)
             biased = biased[torch.randperm(biased.shape[0])]
             train_index = biased[:n // 10]
@@ -74,7 +74,7 @@ def lipo_bias():
         dic = {'test_index': test_index, 'train_index': {}, 'val_index': {}}
         for s in scenarios:
             biased = bias_sampler([ind1[other_index], ind2[other_index], ind3[other_index]],
-                                  [[-2, 25], [-50, 0.4], [2, 4]],
+                                  [[-0.5, 27], [-50, 0.43], [1, 2.19]],
                                   s, other_index, n // 7)
             biased = biased[torch.randperm(biased.shape[0])]
             train_index = biased[:n // 10]
@@ -105,7 +105,7 @@ def esol_bias():
         dic = {'test_index': test_index, 'train_index': {}, 'val_index': {}}
         for s in scenarios:
             biased = bias_sampler([ind1[other_index], ind2[other_index], ind3[other_index]],
-                                  [[-2, 10], [-50, 0.5], [2, -2]],
+                                  [[-0.5, 13], [-50, 0.57], [1, -3.05]],
                                   s, other_index, n // 7)
             biased = biased[torch.randperm(biased.shape[0])]
             train_index = biased[:n // 10]
@@ -135,7 +135,7 @@ def zinc_bias():
         dic = {'test_index': test_index, 'train_index': {}, 'val_index': {}}
         for s in scenarios:
             biased = bias_sampler([ind1[other_index], ind2[other_index], ind3[other_index]],
-                                  [[-2, 20], [-50, 0.7], [-2, -2]],
+                                  [[-0.5, 23], [-50, 0.75], [1, 0]],
                                   s, other_index, n // 14)
             biased = biased[torch.randperm(biased.shape[0])]
             train_index = biased[:n // 20]
@@ -166,7 +166,7 @@ def qm9_bias():
         dic = {'test_index': test_index, 'train_index': {}, 'val_index': {}}
         for s in scenarios:
             biased = bias_sampler([ind1[other_index], ind2[other_index], ind3[other_index]],
-                                  [[-2, 13], [-50, 0.8], [2, 9]],
+                                  [[-1, 13], [-50, 0.8], [1, 9]],
                                   s, other_index, n // 7)
             biased = biased[torch.randperm(biased.shape[0])]
             train_index = biased[:n // 10]
