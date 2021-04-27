@@ -4,65 +4,120 @@ from torch.nn import Sequential, Linear, ReLU, GRU
 from torch_geometric.nn import NNConv, global_mean_pool
 
 
-class Net(torch.nn.Module):
-    def __init__(self, in_dim, h_dim, edge_dim, part, task='regress'):
-        super(Net, self).__init__()
-        self.part = part
-        self.task = task
-        if part == 'R':
-            self.lin0 = Linear(in_dim, h_dim)
-        self.conv = NNConv(h_dim, h_dim, Linear(edge_dim, h_dim * h_dim))
+class ConvLayer(torch.nn.Module):
+    def __init__(self, h_dim, e_dim):
+        super(ConvLayer, self).__init__()
+        nn = Sequential(Linear(e_dim, h_dim), ReLU(), Linear(h_dim, h_dim * h_dim))
+        self.conv = NNConv(h_dim, h_dim, nn, aggr='mean')
         self.gru = GRU(h_dim, h_dim)
-        if part == 'P':
-            if task == 'regress':
-                self.lin1 = Linear(h_dim, 1)
-            else:
-                self.lin1 = Linear(h_dim, 2)
-        elif part == 'S':
-            self.lin1 = Linear(h_dim, 2)
 
-    def forward(self, data, repr=None):
-        if self.part == 'R':
-            out = F.relu(self.lin0(data.x))
-        else:
-            out = repr
+    def forward(self, data, out):
         h = out.unsqueeze(0)
         for _ in range(3):
             m = F.relu(self.conv(out, data.edge_index, data.edge_attr))
             out, h = self.gru(m.unsqueeze(0), h)
             out = out.squeeze(0)
-        if self.part == 'R':
-            return out
-        out = global_mean_pool(out, data.batch)
-        out = self.lin1(out)
-        if self.part == 'S':
-            return F.log_softmax(out, dim=1)
-        if self.task == 'regress':
-            return out.view(-1)
-        return F.log_softmax(out, dim=1)
+        return out
 
 
-class twostep_net(torch.nn.Module):
-    def __init__(self, in_dim, h_dim, edge_dim, task='regress'):
-        super(twostep_net, self).__init__()
-        self.task = task
-        self.lin0 = Linear(in_dim, h_dim)
-        self.conv = NNConv(h_dim, h_dim, Linear(edge_dim, h_dim * h_dim))
-        self.gru = GRU(h_dim, h_dim)
-        if task == 'regress':
-            self.lin1 = Linear(h_dim, 1)
-        else:
-            self.lin1 = Linear(h_dim, 2)
+class BaselineRegressNet(torch.nn.Module):
+    def __init__(self, i_dim, h_dim, e_dim):
+        super(BaselineRegressNet, self).__init__()
+        self.lin0 = Sequential(Linear(i_dim, h_dim), ReLU())
+        self.conv_layer = ConvLayer(h_dim, e_dim)
+        self.lin1 = Sequential(Linear(h_dim, h_dim), ReLU(), Linear(h_dim, 1))
 
     def forward(self, data):
-        out = F.relu(self.lin0(data.x))
-        h = out.unsqueeze(0)
-        for _ in range(3):
-            m = F.relu(self.conv(out, data.edge_index, data.edge_attr))
-            out, h = self.gru(m.unsqueeze(0), h)
-            out = out.squeeze(0)
-        out = global_mean_pool(out, data.batch)
-        out = self.lin1(out)
-        if self.task == 'regress':
-            return out.view(-1)
+        out = self.lin1(global_mean_pool(self.conv_layer(data, self.lin0(data.x)), data.batch))
+        return out.view(-1)
+
+
+class IPSClassifyNet(torch.nn.Module):
+    def __init__(self, i_dim, h_dim, e_dim):
+        super(IPSClassifyNet, self).__init__()
+        self.lin0 = Sequential(Linear(i_dim, h_dim), ReLU())
+        self.conv_layer = ConvLayer(h_dim, e_dim)
+        self.lin1 = Sequential(Linear(h_dim, h_dim), ReLU(), Linear(h_dim, 2))
+
+    def forward(self, data):
+        out = self.lin1(global_mean_pool(self.conv_layer(data, self.lin0(data.x)), data.batch))
         return F.log_softmax(out, dim=1)
+
+
+class ReverseLayerF(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, alpha):
+        ctx.alpha = alpha
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        output = grad_output.neg() * ctx.alpha
+        return output, None
+
+
+class DIRLNet(torch.nn.Module):
+    def __init__(self, i_dim, h_dim, e_dim):
+        super(DIRLNet, self).__init__()
+        self.lin0 = Sequential(Linear(i_dim, h_dim), ReLU())
+        self.feature_conv_layer = ConvLayer(h_dim, e_dim)
+        self.label_conv_layer = ConvLayer(h_dim, e_dim)
+        self.lin1 = Sequential(Linear(h_dim, h_dim), ReLU(), Linear(h_dim, 1))
+        self.domain_conv_layer = ConvLayer(h_dim, e_dim)
+        self.lin2 = Sequential(Linear(h_dim, h_dim), ReLU(), Linear(h_dim, 2))
+
+    def forward(self, data, alpha):
+        out = self.feature_conv_layer(data, self.lin0(data.x))
+        r_out = ReverseLayerF.apply(out, alpha)
+        label_out = self.lin1(global_mean_pool(out, data.batch))
+        domain_out = self.lin2(global_mean_pool(r_out, data.batch))
+        return label_out.view(-1), F.log_softmax(domain_out, dim=1)
+
+
+class CausalFeatureNet(torch.nn.Module):
+    def __init__(self, i_dim, h_dim, e_dim):
+        super(CausalFeatureNet, self).__init__()
+        self.lin0 = Sequential(Linear(i_dim, h_dim), ReLU())
+        self.conv_layer = ConvLayer(h_dim, e_dim)
+
+    def forward(self, data):
+        return self.conv_layer(data, self.lin0(data.x))
+
+
+class CausalRegressNet(torch.nn.Module):
+    def __init__(self, h_dim, e_dim):
+        super(CausalRegressNet, self).__init__()
+        self.conv_layer = ConvLayer(h_dim, e_dim)
+        self.lin1 = Sequential(Linear(h_dim, h_dim), ReLU(), Linear(h_dim, 1))
+
+    def forward(self, data, out):
+        out = self.lin1(global_mean_pool(self.conv_layer(data, out), data.batch))
+        return out.view(-1)
+
+
+class CausalClassifyNet(torch.nn.Module):
+    def __init__(self, h_dim, e_dim):
+        super(CausalClassifyNet, self).__init__()
+        self.conv_layer = ConvLayer(h_dim, e_dim)
+        self.lin1 = Sequential(Linear(h_dim, h_dim), ReLU(), Linear(h_dim, 2))
+
+    def forward(self, data, out):
+        out = self.lin1(global_mean_pool(self.conv_layer(data, out), data.batch))
+        return F.log_softmax(out, dim=1)
+
+
+if __name__ == '__main__':
+    from torch_geometric.datasets import QM9
+    from torch_geometric.data import DataLoader
+
+    dataset = QM9('data/QM9')
+    loader = DataLoader(dataset, batch_size=6)
+    data = iter(loader).next()
+    model = BaselineRegressNet(11, 32, 4)
+    print(model(data))
+
+    R = CausalFeatureNet(11, 32, 4)
+    D = CausalClassifyNet(32, 4)
+    L = CausalRegressNet(32, 4)
+    print(R(data))
+    print(D(data, R(data)), L(data, R(data)))
