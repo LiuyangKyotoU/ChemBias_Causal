@@ -101,6 +101,54 @@ class QM9Sampler(Sampler):
         return torch.tensor(ans).to(torch.float32)
 
 
+class ZINCSampler(Sampler):
+    def __init__(self, f1_alpha, f2_alpha, f3_alpha):
+        dataset = ZINC('data/ZINC')
+        super(ZINCSampler, self).__init__(dataset, f1_alpha, f2_alpha, f3_alpha)
+
+    def _get_mols_f1(self, dataset):
+        ans = []
+        for data in dataset:
+            ans.append(data.x.shape[0])
+        return torch.tensor(ans).to(torch.float32)
+
+    def _get_mols_f2(self, dataset):
+        ans = []
+        for data in dataset:
+            ans.append(torch.nonzero(data.edge_attr == 1).shape[0] / data.edge_attr.shape[0])
+        return torch.tensor(ans).to(torch.float32)
+
+    def _get_mols_f3(self, dataset):
+        ans = []
+        for data in dataset:
+            ans.append(data.y.item())
+        return torch.tensor(ans).to(torch.float32)
+
+
+class MoleNetSampler(Sampler):
+    def __init__(self, task, f1_alpha, f2_alpha, f3_alpha):
+        dataset = MoleculeNet('data/MolNet', task)
+        super(MoleNetSampler, self).__init__(dataset, f1_alpha, f2_alpha, f3_alpha)
+
+    def _get_mols_f1(self, dataset):
+        ans = []
+        for data in dataset:
+            ans.append(data.x.shape[0])
+        return torch.tensor(ans).to(torch.float32)
+
+    def _get_mols_f2(self, dataset):
+        ans = []
+        for data in dataset:
+            ans.append((torch.nonzero(data.edge_attr[:, 0] == 1).shape[0] + 1) / (data.edge_attr.shape[0] + 1))
+        return torch.tensor(ans).to(torch.float32)
+
+    def _get_mols_f3(self, dataset):
+        ans = []
+        for data in dataset:
+            ans.append(data.y[0, 0].item())
+        return torch.tensor(ans).to(torch.float32)
+
+
 if __name__ == '__main__':
     sampler = QM9Sampler(-1, -50, 2)
     sampler.run_all_sampling()
