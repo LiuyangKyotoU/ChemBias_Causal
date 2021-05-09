@@ -286,7 +286,7 @@ class CfrIswTrainer(Trainer):
 
         self.name = 'CfrIsw' + str(self.alpha) + '==>' + self.name
 
-    def _train(self, R, L, D, disc_func, optim1, optim2):
+    def _train(self, R, L, D, disc_func, optimizer):
         R.train()
         L.train()
         D.train()
@@ -294,8 +294,7 @@ class CfrIswTrainer(Trainer):
         unbias_iter = iter(self.test_loader)
         loss_rl, loss_d = 0, 0
         for _ in range(len(bias_iter)):
-            optim1.zero_grad()
-            optim2.zero_grad()
+            optimizer.zero_grad()
             bias_batch = bias_iter.next().to(self.device)
             unbias_batch = unbias_iter.next().to(self.device)
 
@@ -311,18 +310,17 @@ class CfrIswTrainer(Trainer):
             loss = self.alpha * disc_loss + label_loss
             loss.backward()
             loss_rl += loss.item() * bias_batch.num_graphs
-            optim1.step()
+            optimizer.step()
 
-            optim1.zero_grad()  # no need
-            optim2.zero_grad()  # no need
-            domain_loss = F.nll_loss(
+            optimizer.zero_grad()
+            loss = F.nll_loss(
                 torch.cat((D(bias_batch, bias_repr.data), D(unbias_batch, unbias_repr.data))),
                 torch.cat((torch.ones(bias_batch.num_graphs),
                            torch.zeros(unbias_batch.num_graphs))).to(torch.int64).to(self.device)
             )
-            domain_loss.backward()
-            loss_d += domain_loss.item() * (bias_batch.num_graphs + unbias_batch.num_graphs)
-            optim2.step()
+            loss.backward()
+            loss_d += loss.item() * (bias_batch.num_graphs + unbias_batch.num_graphs)
+            optimizer.step()
         loss_rl = loss_rl / len(self.train_loader.dataset)
         loss_d = loss_d / (len(self.train_loader.dataset) + len(self.test_loader.dataset))
         return loss_rl, loss_d
@@ -342,20 +340,17 @@ class CfrIswTrainer(Trainer):
         R = models.CausalFeatureNet(self.i_dim, self.h_dim, self.e_dim, self.times).to(self.device)
         L = models.CausalRegressNet(self.h_dim, self.e_dim, self.times).to(self.device)
         D = models.CausalClassifyNet(self.h_dim, self.e_dim, self.times).to(self.device)
-        optim1 = torch.optim.Adam(list(R.parameters()) + list(L.parameters()), lr=self.lr)
-        optim2 = torch.optim.Adam(D.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(list(R.parameters()) + list(L.parameters()) + list(D.parameters()), lr=self.lr)
         # There will not be val_error for D training part, thus we use two optimizer.
-        schedu1 = torch.optim.lr_scheduler.ReduceLROnPlateau(optim1, mode='min', factor=0.7, patience=5,
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.7, patience=5,
                                                              min_lr=0.00001)
-        schedu2 = torch.optim.lr_scheduler.StepLR(optim2, self.epoch // 3, gamma=0.1)
         best_val_error = float('inf')
         best_model_dic = None
         disc_func = SamplesLoss('sinkhorn')
         for e in range(self.epoch):
-            train_loss_lr, train_loss_d = self._train(R, L, D, disc_func, optim1, optim2)
+            train_loss_lr, train_loss_d = self._train(R, L, D, disc_func, optimizer)
             val_error = self._test(R, L, self.val_loader)
-            schedu1.step(val_error)
-            schedu2.step()
+            scheduler.step(val_error)
             if val_error <= best_val_error:
                 best_val_error = val_error
                 best_model_dic = (copy.deepcopy(R.state_dict()),
